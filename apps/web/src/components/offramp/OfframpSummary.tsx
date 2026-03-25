@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 import type { OfframpFormState, ProviderRate } from "@/types/offramp";
-import { SUPPORTED_COUNTRIES } from "@/types/offramp";
+import { SUPPORTED_COUNTRIES, getCurrencySymbol } from "@/types/offramp";
 
 interface OfframpSummaryProps {
     formState: OfframpFormState;
@@ -99,9 +99,7 @@ export default function OfframpSummary({
                             {quote ? (
                                 <>
                                     <p className="text-2xl font-bold text-white">
-                                        {selectedCountry?.currency === "NGN" ? "₦" :
-                                            selectedCountry?.currency === "GHS" ? "₵" :
-                                                selectedCountry?.currency === "KES" ? "KSh " : ""}
+                                        {getCurrencySymbol(selectedCountry?.currency || "")}
                                         {quote.fiatAmount?.toLocaleString()}
                                     </p>
                                     <p className="text-fundable-light-grey text-xs">
