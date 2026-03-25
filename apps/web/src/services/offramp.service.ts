@@ -10,6 +10,7 @@ import type {
     CreateOfframpResponse,
     QuoteStatusResponse,
 } from "@/types/offramp";
+import { withRetry, RetryableError } from "@/utils/retry";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "";
 const OFFRAMP_API_BASE = `${API_BASE}/api/offramp`;
@@ -19,13 +20,18 @@ const getHeaders = (walletId?: string) => ({
     ...(walletId ? { "x-wallet-id": walletId } : {}),
 });
 
+async function fetchWithRetry(input: string, init?: RequestInit): Promise<Response> {
+    return withRetry(async () => {
+        const res = await fetch(input, init);
+        if (res.status >= 500) throw new RetryableError(res.statusText, res.status);
+        return res;
+    });
+}
+
 export const offrampService = {
-    /**
-     * Sync wallet address with backend
-     */
     async syncWallet(walletId: string): Promise<{ success: boolean; message: string }> {
         try {
-            const res = await fetch(`${OFFRAMP_API_BASE}/sync`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/sync`, {
                 method: "GET",
                 headers: getHeaders(walletId),
             });
@@ -46,10 +52,6 @@ export const offrampService = {
         }
     },
 
-    /**
-     * Get aggregated rates from all compatible providers.
-     * For Stellar offramp, we always request network=polygon since we bridge to Polygon.
-     */
     async getAggregatedRates(params: {
         token: string;
         amount: number;
@@ -62,10 +64,10 @@ export const offrampService = {
                 amount: params.amount.toString(),
                 country: params.country,
                 currency: params.currency,
-                network: "polygon", // Always Polygon for Stellar bridge
+                network: "polygon",
             });
 
-            const res = await fetch(`${OFFRAMP_API_BASE}/rates?${queryParams}`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/rates?${queryParams}`, {
                 method: "GET",
                 headers: getHeaders(),
             });
@@ -83,96 +85,61 @@ export const offrampService = {
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error ? error.message : "Failed to get rates",
+                error: error instanceof Error ? error.message : "Failed to get rates",
             };
         }
     },
 
-    /**
-     * Create offramp using selected provider.
-     * Always passes network=polygon for Stellar flow.
-     */
     async createOfframp(
         request: Omit<CreateOfframpRequest, "network">,
         walletId: string
     ): Promise<CreateOfframpResponse> {
         try {
-            const res = await fetch(`${OFFRAMP_API_BASE}/create`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/create`, {
                 method: "POST",
                 headers: getHeaders(walletId),
-                body: JSON.stringify({
-                    ...request,
-                    network: "polygon", // Always bridge to Polygon
-                }),
+                body: JSON.stringify({ ...request, network: "polygon" }),
             });
 
             const data = await res.json();
 
             if (!res.ok) {
                 const errorMessage = data.info?.message || data.message || data.error || "Failed to create offramp";
-                return {
-                    success: false,
-                    error: errorMessage,
-                };
+                return { success: false, error: errorMessage };
             }
 
             return { success: true, data: data.data || data };
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to create offramp",
+                error: error instanceof Error ? error.message : "Failed to create offramp",
             };
         }
     },
 
-    /**
-     * Get list of supported banks for a country
-     */
-    async getBankList(
-        country: OfframpCountry,
-        walletId?: string
-    ): Promise<BankListResponse> {
+    async getBankList(country: OfframpCountry, walletId?: string): Promise<BankListResponse> {
         try {
-            const res = await fetch(
-                `${OFFRAMP_API_BASE}/banks?country=${country}`,
-                {
-                    method: "GET",
-                    headers: getHeaders(walletId),
-                }
-            );
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/banks?country=${country}`, {
+                method: "GET",
+                headers: getHeaders(walletId),
+            });
 
             const data = await res.json();
 
             if (!res.ok) {
                 const errorMessage = data.info?.message || data.message || data.error || "Failed to fetch bank list";
-                return {
-                    success: false,
-                    error: errorMessage,
-                };
+                return { success: false, error: errorMessage };
             }
 
-            return {
-                success: true,
-                data: data.data || data,
-            };
+            return { success: true, data: data.data || data };
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to fetch bank list",
+                error: error instanceof Error ? error.message : "Failed to fetch bank list",
             };
         }
     },
 
-    /**
-     * Verify a bank account and get the account holder name
-     */
     async verifyBankAccount(
         bankCode: string,
         accountNumber: string,
@@ -180,7 +147,7 @@ export const offrampService = {
         walletId?: string
     ): Promise<VerifyBankAccountResponse> {
         try {
-            const res = await fetch(`${OFFRAMP_API_BASE}/verify-account`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/verify-account`, {
                 method: "POST",
                 headers: getHeaders(walletId),
                 body: JSON.stringify({ bankCode, accountNumber, country }),
@@ -191,29 +158,19 @@ export const offrampService = {
             if (!res.ok) {
                 return {
                     success: false,
-                    error:
-                        data.message || data.error || "Failed to verify bank account",
+                    error: data.message || data.error || "Failed to verify bank account",
                 };
             }
 
-            return {
-                success: true,
-                data: data.data || data,
-            };
+            return { success: true, data: data.data || data };
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to verify bank account",
+                error: error instanceof Error ? error.message : "Failed to verify bank account",
             };
         }
     },
 
-    /**
-     * Save quote to backend database
-     */
     async saveQuote(
         params: {
             walletAddress: string;
@@ -234,7 +191,7 @@ export const offrampService = {
         walletId?: string
     ): Promise<{ success: boolean; data?: unknown; error?: string }> {
         try {
-            const res = await fetch(`${OFFRAMP_API_BASE}/quote/save`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/quote/save`, {
                 method: "POST",
                 headers: getHeaders(walletId),
                 body: JSON.stringify(params),
@@ -243,32 +200,25 @@ export const offrampService = {
             const data = await res.json();
 
             if (!res.ok) {
-                return {
-                    success: false,
-                    error: data.message || data.error || "Failed to save quote",
-                };
+                return { success: false, error: data.message || data.error || "Failed to save quote" };
             }
 
             return { success: true, data: data.data || data };
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error ? error.message : "Failed to save quote",
+                error: error instanceof Error ? error.message : "Failed to save quote",
             };
         }
     },
 
-    /**
-     * Update quote with bridge transaction hash
-     */
     async updateQuoteTxHash(
         transactionReference: string,
         txHash: string,
         walletId?: string
     ): Promise<{ success: boolean; data?: unknown; error?: string }> {
         try {
-            const res = await fetch(`${OFFRAMP_API_BASE}/quote/update-tx`, {
+            const res = await fetchWithRetry(`${OFFRAMP_API_BASE}/quote/update-tx`, {
                 method: "POST",
                 headers: getHeaders(walletId),
                 body: JSON.stringify({ transactionReference, txHash }),
@@ -277,33 +227,24 @@ export const offrampService = {
             const data = await res.json();
 
             if (!res.ok) {
-                return {
-                    success: false,
-                    error: data.message || data.error || "Failed to update tx hash",
-                };
+                return { success: false, error: data.message || data.error || "Failed to update tx hash" };
             }
 
             return { success: true, data: data.data || data };
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to update tx hash",
+                error: error instanceof Error ? error.message : "Failed to update tx hash",
             };
         }
     },
 
-    /**
-     * Poll quote/payout status
-     */
     async getQuoteStatus(
         transactionReference: string,
         walletId?: string
     ): Promise<QuoteStatusResponse> {
         try {
-            const res = await fetch(
+            const res = await fetchWithRetry(
                 `${API_BASE}/api/webhook/quote/${transactionReference}`,
                 {
                     method: "GET",
@@ -312,13 +253,11 @@ export const offrampService = {
             );
 
             const data = await res.json();
-            console.log("data", data);      
 
             if (!res.ok) {
                 return {
                     success: false,
-                    error:
-                        data.message || data.error || "Failed to get quote status",
+                    error: data.message || data.error || "Failed to get quote status",
                 };
             }
 
@@ -326,10 +265,7 @@ export const offrampService = {
         } catch (error) {
             return {
                 success: false,
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to get quote status",
+                error: error instanceof Error ? error.message : "Failed to get quote status",
             };
         }
     },
