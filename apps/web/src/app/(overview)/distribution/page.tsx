@@ -9,7 +9,9 @@ import { Table, TableBody, TableHead, TableHeader, TableRow, TableCell } from '@
 import { Switch } from '@/components/ui/switch';
 import { Upload, Plus, Trash2 } from 'lucide-react';
 import { useDistributionState } from '@/hooks/use-distribution-state';
+import { useDistributionTransaction } from '@/hooks/use-distribution-transaction';
 import { downloadCSVTemplate, processCSVFile } from '@/utils/csv-processing';
+import { SUPPORTED_TOKENS } from '@/lib/validations';
 import ProtectedRoute from '@/components/layouts/ProtectedRoute';
 
 export default function DistributionPage() {
@@ -34,6 +36,16 @@ export default function DistributionPage() {
   const [isProcessing, setIsProcessing] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const pageRef = React.useRef<HTMLDivElement>(null);
+
+  const { execute, isSubmitting } = useDistributionTransaction();
+
+  const tokenAddress = React.useMemo(() => {
+    return SUPPORTED_TOKENS.find((t) => t.value === selectedToken)?.address ?? 'native';
+  }, [selectedToken]);
+
+  const handleDistribute = async () => {
+    await execute(state, tokenAddress);
+  };
 
   const showMessage = (type: 'success' | 'error', message: string) => {
     setUploadStatus({ type, message });
@@ -208,9 +220,11 @@ export default function DistributionPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="USDC">USDC</SelectItem>
-                <SelectItem value="XLM">XLM</SelectItem>
-                <SelectItem value="USDT">USDT</SelectItem>
+                {SUPPORTED_TOKENS.map((token) => (
+                  <SelectItem key={token.value} value={token.value}>
+                    {token.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -384,9 +398,10 @@ export default function DistributionPage() {
 
           <Button
             className="bg-purple-600 hover:bg-purple-700"
-            disabled={state.recipients.length === 0}
+            disabled={state.recipients.length === 0 || isSubmitting}
+            onClick={handleDistribute}
           >
-            Distribute Token
+            {isSubmitting ? 'Distributing...' : 'Distribute Token'}
           </Button>
         </div>
         </div>
