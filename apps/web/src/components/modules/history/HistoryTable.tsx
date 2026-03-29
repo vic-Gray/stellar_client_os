@@ -36,9 +36,11 @@ import { Button } from "@/components/ui/button";
 import ActionsCell from "./ActionsCell";
 import { format } from "date-fns";
 
+import { ColumnDef } from "@tanstack/react-table";
+
 interface HistoryTableProps {
     data: HistoryRecord[];
-    columns: any[];
+    columns: ColumnDef<HistoryRecord, unknown>[];
     page: number;
     limit: number;
     totalCount: number;
