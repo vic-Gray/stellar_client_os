@@ -293,7 +293,7 @@ export default function DistributionPage() {
           <div className="flex gap-2">
             <Input
               type="text"
-              placeholder="Enter an X post URL (https://x.com/username/status/1234567890) to extract Starknet addresses from replies."
+              placeholder="Enter an X post URL (https://x.com/username/status/1234567890) to extract Stellar addresses from replies."
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               className="flex-1"
