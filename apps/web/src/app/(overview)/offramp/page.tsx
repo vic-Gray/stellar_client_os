@@ -10,6 +10,7 @@ import { BridgeStatusTracker } from "@/components/offramp/BridgeStatusTracker";
 import OfframpSuccessModal from "@/components/offramp/OfframpSuccessModal";
 import DashboardLayout from "@/components/layouts/DashboardLayout";
 import ProtectedRoute from "@/components/layouts/ProtectedRoute";
+import { useTransactionGuard } from "@/hooks/useTransactionGuard";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { ErrorFallback } from "@/components/ui/error-fallback";
 
@@ -28,7 +29,6 @@ export default function OfframpPage() {
         quote,
         quoteError,
         offrampData,
-        bridgeQuote,
         feeBreakdown,
         getQuote,
         confirmAndBridge,
@@ -42,6 +42,8 @@ export default function OfframpPage() {
 
     const [showQuoteModal, setShowQuoteModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const quoteGuard = useTransactionGuard(0);
+    const bridgeGuard = useTransactionGuard(2000);
 
     // Show quote modal when quote step is reached
     React.useEffect(() => {
@@ -59,8 +61,22 @@ export default function OfframpPage() {
         }
     }, [step]);
 
-    const handleProceedToConfirm = () => {
-        getQuote(formState);
+    const handleProceedToConfirm = async () => {
+        if (quoteGuard.isGuardActive) {
+            return;
+        }
+        await quoteGuard.runWithGuard(async () => {
+            await getQuote(formState);
+        }, { cooldownMs: 0 });
+    };
+
+    const handleConfirmBridge = async () => {
+        if (bridgeGuard.isGuardActive) {
+            return;
+        }
+        await bridgeGuard.runWithGuard(async () => {
+            await confirmAndBridge();
+        }, { cooldownMs: 2000 });
     };
 
     const handleCloseQuoteModal = () => {
@@ -80,6 +96,22 @@ export default function OfframpPage() {
             <ProtectedRoute
                 description="Connect your Stellar wallet to convert USDC to local currency."
             >
+                <div
+                    className={`space-y-8 pb-10 ${(quoteGuard.isGuardActive || bridgeGuard.isGuardActive) ? "pointer-events-none" : ""}`}
+                    onKeyDownCapture={(event) => {
+                        if (event.key === "Enter" && (quoteGuard.isGuardActive || bridgeGuard.isGuardActive)) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                    }}
+                >
+                    {/* Intro text */}
+                    <p className="text-fundable-light-grey max-w-2xl px-2">
+                        Withdraw Stellar USDC instantly to your bank account in Nigeria, Ghana, or Kenya.
+                    </p>
+
+                    {/* Main Content */}
+                    <div className="space-y-8">
                 <ErrorBoundary
                     boundaryName="offramp-module"
                     fallback={({ error, reset }) => (
@@ -136,6 +168,7 @@ export default function OfframpPage() {
                                         quoteError={quoteError}
                                         onProceed={handleProceedToConfirm}
                                         isLoading={isLoadingQuote || isLoading}
+                                        isSubmitting={quoteGuard.isGuardActive}
                                     />
                                 </div>
                             </div>
@@ -177,6 +210,27 @@ export default function OfframpPage() {
                         </div>
                     </div>
 
+            {/* Modals outside scroll area */}
+            <OfframpQuoteModal
+                isOpen={showQuoteModal}
+                offrampData={offrampData}
+                feeBreakdown={feeBreakdown}
+                formState={formState}
+                onClose={handleCloseQuoteModal}
+                onConfirm={handleConfirmBridge}
+                isLoading={isLoading}
+                isSubmitting={bridgeGuard.isGuardActive}
+            />
+
+            <OfframpSuccessModal
+                isOpen={showSuccessModal}
+                feeBreakdown={feeBreakdown}
+                payoutStatus={payoutStatus}
+                bridgeTxHash={bridgeTxHash}
+                onClose={() => {
+                    setShowSuccessModal(false);
+                }}
+            />
                     {/* Modals outside scroll area */}
                     <OfframpQuoteModal
                         isOpen={showQuoteModal}

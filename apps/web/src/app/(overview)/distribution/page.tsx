@@ -20,6 +20,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { notify } from '@/utils/notification';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { ErrorFallback } from '@/components/ui/error-fallback';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 
 export default function DistributionPage() {
   const {
@@ -30,6 +31,7 @@ export default function DistributionPage() {
     removeRecipient,
     bulkAddRecipients,
     setTotalAmount,
+    reset,
   } = useDistributionState();
 
   const [showAddressLabel, setShowAddressLabel] = React.useState(false);
@@ -71,8 +73,35 @@ export default function DistributionPage() {
   const { balanceError: distBalanceError, insufficientBalance: distInsufficientBalance } =
     useBalanceValidation(distributionTotal, selectedToken);
 
+  const hasRecipientInput = React.useMemo(() => {
+    return state.recipients.some((recipient) => {
+      const hasAddress = recipient.address.trim().length > 0;
+      const hasAmount = (recipient.amount ?? '').trim().length > 0;
+      return hasAddress || hasAmount;
+    });
+  }, [state.recipients]);
+
+  const isDistributionDirty = React.useMemo(() => {
+    return (
+      hasRecipientInput ||
+      state.totalAmount.trim().length > 0 ||
+      urlInput.trim().length > 0
+    );
+  }, [hasRecipientInput, state.totalAmount, urlInput]);
+
+  useUnsavedChanges(isDistributionDirty);
+
   const handleDistribute = async () => {
-    await execute(state, tokenAddress);
+    const success = await execute(state, tokenAddress);
+    if (!success) {
+      return;
+    }
+
+    reset();
+    setUrlInput('');
+    setCsvErrors([]);
+    setCsvWarnings([]);
+    setUploadStatus({ type: null, message: '' });
   };
 
   const showMessage = (type: 'success' | 'error', message: string) => {
