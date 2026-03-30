@@ -103,4 +103,5 @@ export function validateEnv(): Env {
 }
 
 // Validate and export typed environment variables
-export const env = validateEnv();
+// Skip module-level validation in test environments (tests call validateEnv() directly)
+export const env = process.env.NODE_ENV === 'test' ? ({} as ReturnType<typeof validateEnv>) : validateEnv();
