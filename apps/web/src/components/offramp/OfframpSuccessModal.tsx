@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { CheckCircle2, Copy, ExternalLink, X, Loader2, XCircle, Clock } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, X, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import toast from "react-hot-toast";
-import type { QuoteStatusData, BridgeFeeBreakdown } from "@/types/offramp";
+import type { QuoteStatusData } from "@/types/offramp";
 
 interface OfframpSuccessModalProps {
     isOpen: boolean;
-    feeBreakdown: BridgeFeeBreakdown | null;
     payoutStatus: QuoteStatusData | null;
     bridgeTxHash: string | null;
     onClose: () => void;
@@ -16,7 +15,6 @@ interface OfframpSuccessModalProps {
 
 export default function OfframpSuccessModal({
     isOpen,
-    feeBreakdown,
     payoutStatus,
     bridgeTxHash,
     onClose,
@@ -82,7 +80,7 @@ export default function OfframpSuccessModal({
                 {/* Title */}
                 <div className="text-center space-y-2">
                     <h2 className="text-2xl font-syne font-bold text-white">
-                        {isCompleted ? "Offramp Complete! 🎉" : isFailed ? "Offramp Failed" : "Offramp Processing"}
+                        {isCompleted ? "Offramp Complete!" : isFailed ? "Offramp Failed" : "Offramp Processing"}
                     </h2>
                     <p className="text-fundable-light-grey text-sm">
                         {isCompleted
@@ -92,31 +90,6 @@ export default function OfframpSuccessModal({
                                 : "Your transaction is being processed. You can close this window and check back later."}
                     </p>
                 </div>
-
-                {/* Summary Card */}
-                {feeBreakdown && (
-                    <div className="space-y-4 p-5 rounded-2xl bg-fundable-dark border border-gray-800">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-fundable-light-grey">Initial Send</span>
-                            <span className="text-white font-medium">
-                                {parseFloat(feeBreakdown.sendAmount).toFixed(4)} USDC
-                            </span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-fundable-light-grey">Bridge Fee</span>
-                            <span className="text-red-400">
-                                -{parseFloat(feeBreakdown.bridgeFee).toFixed(4)} USDC
-                            </span>
-                        </div>
-                        <div className="h-px bg-gray-800" />
-                        <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium text-white">Total Received</span>
-                            <span className="text-xl font-bold text-green-500">
-                                ₦{parseFloat(feeBreakdown.fiatPayout).toLocaleString()}
-                            </span>
-                        </div>
-                    </div>
-                )}
 
                 {/* Transaction Info */}
                 <div className="space-y-4">

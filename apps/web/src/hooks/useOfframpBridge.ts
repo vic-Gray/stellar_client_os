@@ -2,12 +2,10 @@
 
 import { useCallback, useState, useRef, useEffect } from "react";
 import { useWallet } from "@/providers/StellarWalletProvider";
-import { allbridgeService, type BridgeQuote } from "@/services/allbridge.service";
 import { offrampService } from "@/services/offramp.service";
 import type {
     OfframpStep,
     OfframpFormState,
-    BridgeFeeBreakdown,
     Bank,
     CreateOfframpResponse,
     QuoteStatusData,
@@ -37,12 +35,10 @@ interface UseOfframpBridgeReturn {
         country: string
     ) => Promise<string | null>;
 
-    // Quote & bridge
+    // Quote
     quote: ProviderRate | null;
     isLoadingQuote: boolean;
     quoteError: string | null;
-    bridgeQuote: BridgeQuote | null;
-    feeBreakdown: BridgeFeeBreakdown | null;
     offrampData: CreateOfframpResponse["data"] | null;
     getQuote: (form: OfframpFormState) => Promise<void>;
     confirmAndBridge: () => Promise<void>;
@@ -57,12 +53,12 @@ interface UseOfframpBridgeReturn {
 }
 
 export function useOfframpBridge(): UseOfframpBridgeReturn {
-    const { address, isConnected, signTransaction } = useWallet();
+    const { address, isConnected } = useWallet();
 
     // Core state
     const [step, setStep] = useState<OfframpStep>("form");
     const [error, setError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false); // For final bridge confirmation
+    const [isLoading, setIsLoading] = useState(false);
 
     // Form State
     const [formState, setFormState] = useState<OfframpFormState>({
@@ -83,20 +79,16 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
     const [quoteError, setQuoteError] = useState<string | null>(null);
 
     // Result State
-    const [bridgeQuote, setBridgeQuote] = useState<BridgeQuote | null>(null);
-    const [feeBreakdown, setFeeBreakdown] = useState<BridgeFeeBreakdown | null>(null);
     const [offrampData, setOfframpData] = useState<CreateOfframpResponse["data"] | null>(null);
     const [bridgeTxHash, setBridgeTxHash] = useState<string | null>(null);
     const [payoutStatus, setPayoutStatus] = useState<QuoteStatusData | null>(null);
 
     // Polling refs
-    const bridgePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const payoutPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Cleanup polling on unmount
     useEffect(() => {
         return () => {
-            if (bridgePollRef.current) clearInterval(bridgePollRef.current);
             if (payoutPollRef.current) clearInterval(payoutPollRef.current);
         };
     }, []);
@@ -132,7 +124,6 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
             try {
                 const result = await offrampService.getBankList(formState.country, address || undefined);
                 if (result.success && result.data) {
-                    // Deduplicate banks
                     const uniqueBanks = result.data.filter(
                         (bank, index, self) =>
                             index === self.findIndex((b) => b.code === bank.code)
@@ -209,7 +200,7 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
                     setQuote(null);
                     setQuoteError(result.error || "No rates available");
                 }
-            } catch (error) {
+            } catch {
                 setQuote(null);
                 setQuoteError("Failed to fetch rates");
             } finally {
@@ -240,10 +231,9 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
             try {
                 const amount = parseFloat(form.amount);
 
-                // Step 1: Create offramp on backend using the selected provider from the quote
                 const offrampRes = await offrampService.createOfframp(
                     {
-                        providerId: quote.providerId, // Use the provider from the real-time quote
+                        providerId: quote.providerId,
                         token: form.token,
                         amount,
                         country: form.country,
@@ -262,29 +252,6 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
                 }
 
                 setOfframpData(offrampRes.data);
-
-                // Step 2: Calculate bridge fees using Allbridge SDK
-                console.log("offrampRes.data", offrampRes.data.depositAmount);
-                const depositAmount = offrampRes.data.depositAmount.toString();
-                const quoteResult = await allbridgeService.getBridgeQuote(depositAmount);
-
-
-                setBridgeQuote(quoteResult);
-
-                // Step 3: Build fee breakdown
-                const ratePerUSDC = offrampRes.data.fiatAmount / offrampRes.data.depositAmount;
-                const currency = form.country === "NG" ? "NGN" : form.country === "GH" ? "GHS" : "KES";
-
-                setFeeBreakdown({
-                    sendAmount: quoteResult.sendAmount,
-                    bridgeFee: quoteResult.bridgeFee,
-                    receivedOnPolygon: depositAmount,
-                    cashwyreFee: (offrampRes.data.depositAmount - offrampRes.data.fiatAmount / ratePerUSDC).toFixed(2),
-                    fiatPayout: offrampRes.data.fiatAmount.toString(),
-                    exchangeRate: `1 USDC = ${ratePerUSDC.toFixed(2)} ${currency}`,
-                    estimatedTime: quoteResult.estimatedTimeMinutes + 5,
-                });
-
                 setStep("quote");
             } catch (e) {
                 setError(e instanceof Error ? e.message : "Failed to process quote");
@@ -295,77 +262,34 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
         [isConnected, address, quote]
     );
 
-    // ---------- Bridge Execution ----------
+    // ---------- Confirm & Process ----------
 
     const confirmAndBridge = useCallback(async () => {
-        if (!isConnected || !address || !offrampData || !bridgeQuote) {
+        if (!isConnected || !address || !offrampData) {
             setError("Missing required data");
             return;
         }
 
         setIsLoading(true);
         setError(null);
-        setStep("signing");
+        setStep("processing");
 
         try {
-            let rawTx = await allbridgeService.buildBridgeTransaction({
-                amount: bridgeQuote.sendAmount,
-                fromAddress: address,
-                toAddress: offrampData.depositAddress,
-            });
-
-            const needsRebuild = await allbridgeService.handleBumpIfNeeded(rawTx, address, signTransaction);
-            if (needsRebuild) {
-                rawTx = await allbridgeService.buildBridgeTransaction({
-                    amount: bridgeQuote.sendAmount,
-                    fromAddress: address,
-                    toAddress: offrampData.depositAddress,
-                });
-            }
-
-            const signedXdr = await signTransaction(rawTx);
-            setStep("bridging");
-            const txHash = await allbridgeService.submitTransaction(signedXdr);
-            setBridgeTxHash(txHash);
-
-            await offrampService.updateQuoteTxHash(offrampData.reference, txHash, address);
-            startBridgePolling(txHash);
+            startPayoutPolling();
         } catch (e) {
-            const msg = e instanceof Error ? e.message : "Bridge failed";
-            if (msg.includes("declined") || msg.includes("rejected") || msg.includes("cancelled")) {
-                setStep("quote");
-                setError("Transaction cancelled");
-            } else {
-                setStep("failed");
-                setError(msg);
-            }
+            const msg = e instanceof Error ? e.message : "Processing failed";
+            setStep("failed");
+            setError(msg);
         } finally {
             setIsLoading(false);
         }
-    }, [isConnected, address, offrampData, bridgeQuote, signTransaction]);
+    }, [isConnected, address, offrampData]);
 
     // ---------- Status Polling ----------
-
-    const startBridgePolling = useCallback((txHash: string) => {
-        if (bridgePollRef.current) clearInterval(bridgePollRef.current);
-        bridgePollRef.current = setInterval(async () => {
-            try {
-                const status = await allbridgeService.getTransferStatus(txHash);
-                if (status && typeof status === "object") {
-                    if (bridgePollRef.current) clearInterval(bridgePollRef.current);
-                    setStep("processing");
-                    startPayoutPolling();
-                }
-            } catch {
-                // Keep polling — bridge may still be in progress
-            }
-        }, 15000);
-    }, []);
 
     const startPayoutPolling = useCallback(() => {
         if (!offrampData?.reference) return;
         if (payoutPollRef.current) clearInterval(payoutPollRef.current);
-        console.log("polling reference:", offrampData.reference)
         payoutPollRef.current = setInterval(async () => {
             try {
                 const res = await offrampService.getQuoteStatus(offrampData.reference, address || undefined);
@@ -389,7 +313,6 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
     // ---------- Controls ----------
 
     const reset = useCallback(() => {
-        if (bridgePollRef.current) clearInterval(bridgePollRef.current);
         if (payoutPollRef.current) clearInterval(payoutPollRef.current);
         setStep("form");
         setError(null);
@@ -402,8 +325,6 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
             accountNumber: "",
             accountName: "",
         });
-        setBridgeQuote(null);
-        setFeeBreakdown(null);
         setOfframpData(null);
         setBridgeTxHash(null);
         setPayoutStatus(null);
@@ -417,8 +338,6 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
     const goBack = useCallback(() => {
         if (step === "quote") {
             setStep("form");
-            setBridgeQuote(null);
-            setFeeBreakdown(null);
             setOfframpData(null);
             setError(null);
         }
@@ -429,10 +348,8 @@ export function useOfframpBridge(): UseOfframpBridgeReturn {
         error,
         isLoading,
         banks,
-        loadBanks: async () => { }, // Deprecated but kept for interface compatibility
-        verifyAccount: async () => null, // Deprecated but kept for interface compatibility
-        bridgeQuote,
-        feeBreakdown,
+        loadBanks: async () => { },
+        verifyAccount: async () => null,
         offrampData,
         getQuote,
         confirmAndBridge,

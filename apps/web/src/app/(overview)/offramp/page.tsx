@@ -28,8 +28,6 @@ export default function OfframpPage() {
         quote,
         quoteError,
         offrampData,
-        bridgeQuote,
-        feeBreakdown,
         getQuote,
         confirmAndBridge,
         bridgeTxHash,
@@ -71,7 +69,7 @@ export default function OfframpPage() {
             title="Offramp"
             infoMessage={{
                 type: "info",
-                message: "Convert Stellar USDC to local currency via Allbridge Core & Cashwyre",
+                message: "Convert Stellar USDC to local currency",
                 showOnNetwork: "testnet"
             }}
         >
@@ -133,7 +131,7 @@ export default function OfframpPage() {
                 {isConnected && (
                     <div className="space-y-8">
                         {/* Error Banner */}
-                        {error && !["signing", "bridging", "processing", "failed"].includes(step) && (
+                        {error && !["signing", "processing", "failed"].includes(step) && (
                             <div className="max-w-4xl mx-auto px-6 py-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-3">
                                 <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                                 <p className="text-sm text-red-400 font-medium">{error}</p>
@@ -175,7 +173,7 @@ export default function OfframpPage() {
                         )}
 
                         {/* Steps: Signing / Bridging / Processing / Failed */}
-                        {["signing", "bridging", "processing", "failed", "quote"].includes(step) && (
+                        {["signing", "processing", "failed", "quote"].includes(step) && (
                             <div className="max-w-2xl mx-auto">
                                 <BridgeStatusTracker
                                     step={step === "quote" ? "signing" : step} // Show tracker during bridge
@@ -215,7 +213,6 @@ export default function OfframpPage() {
             <OfframpQuoteModal
                 isOpen={showQuoteModal}
                 offrampData={offrampData}
-                feeBreakdown={feeBreakdown}
                 formState={formState}
                 onClose={handleCloseQuoteModal}
                 onConfirm={confirmAndBridge}
@@ -224,7 +221,6 @@ export default function OfframpPage() {
 
             <OfframpSuccessModal
                 isOpen={showSuccessModal}
-                feeBreakdown={feeBreakdown}
                 payoutStatus={payoutStatus}
                 bridgeTxHash={bridgeTxHash}
                 onClose={() => {
