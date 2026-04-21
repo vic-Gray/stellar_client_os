@@ -4,6 +4,16 @@
 export type OfframpCountry = "NG" | "GH" | "KE";
 export type OfframpCurrency = "NGN" | "GHS" | "KES";
 
+// Currency symbols
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+    NGN: "₦",
+    GHS: "₵",
+    KES: "KSh ",
+};
+
+export const getCurrencySymbol = (currency: string) =>
+    CURRENCY_SYMBOLS[currency] || currency + " ";
+
 export interface CountryInfo {
     code: OfframpCountry;
     name: string;
